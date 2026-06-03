@@ -193,7 +193,7 @@ main.Position = UDim2.new(0.5, -WIN_W/2, 0, 60)
 main.BackgroundColor3 = Color3.fromRGB(18, 18, 32)
 main.BorderSizePixel = 0
 main.Active = true
-main.Draggable = true
+
 main.Parent = gui
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 8)
 local ws = Instance.new("UIStroke", main)
@@ -241,8 +241,122 @@ titleBar.BackgroundColor3 = Color3.fromRGB(22, 20, 45)
 titleBar.BorderSizePixel = 0
 titleBar.ZIndex = 2
 titleBar.Parent = main
+
+--------------------------------------------------
+-- DRAG PC + MOBILE
+--------------------------------------------------
+
+local UIS = game:GetService("UserInputService")
+
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+local function updateDrag(input)
+	local delta = input.Position - dragStart
+
+	main.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+titleBar.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+	or input.UserInputType == Enum.UserInputType.Touch then
+
+		dragging = true
+		dragStart = input.Position
+		startPos = main.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+titleBar.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement
+	or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if dragging and input == dragInput then
+		updateDrag(input)
+	end
+end)
+
 Instance.new("UICorner", titleBar).CornerRadius = UDim.new(0, 8)
 makeText(titleBar, "⚔  Auto Farm", 12, 0, 200, 30, 13, Color3.fromRGB(175, 169, 236), true)
+
+local minimized = false
+local originalSize = main.Size
+
+local minimizeBtn = Instance.new("TextButton")
+minimizeBtn.Size = UDim2.new(0,22,0,22)
+minimizeBtn.Position = UDim2.new(1,-54,0,4)
+minimizeBtn.Text = "—"
+minimizeBtn.Font = Enum.Font.GothamBold
+minimizeBtn.TextSize = 14
+minimizeBtn.TextColor3 = Color3.new(1,1,1)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+minimizeBtn.BorderSizePixel = 0
+minimizeBtn.Parent = titleBar
+
+Instance.new("UICorner", minimizeBtn).CornerRadius = UDim.new(1,0)
+
+minimizeBtn.MouseButton1Click:Connect(function()
+
+	minimized = not minimized
+
+	for _,obj in ipairs(main:GetChildren()) do
+		if obj ~= titleBar and obj:IsA("GuiObject") then
+			obj.Visible = not minimized
+		end
+	end
+
+	if minimized then
+		main.Size = UDim2.new(0,WIN_W,0,30)
+		minimizeBtn.Text = "+"
+	else
+		main.Size = originalSize
+		minimizeBtn.Text = "—"
+	end
+
+end)
+
+local closeBtn = Instance.new("TextButton")
+closeBtn.Size = UDim2.new(0,22,0,22)
+closeBtn.Position = UDim2.new(1,-28,0,4)
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 12
+closeBtn.TextColor3 = Color3.new(1,1,1)
+closeBtn.BackgroundColor3 = Color3.fromRGB(180,40,40)
+closeBtn.BorderSizePixel = 0
+closeBtn.Parent = titleBar
+
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(1,0)
+
+closeBtn.MouseButton1Click:Connect(function()
+
+	enabled = false
+
+	if farmConnection then
+		farmConnection:Disconnect()
+	end
+
+	gui:Destroy()
+
+end)
+
 makeText(main, "เลือกบอส:", 12, 36, 200, 16, 11, Color3.fromRGB(175, 169, 236), false)
 
 local checkStates = {}

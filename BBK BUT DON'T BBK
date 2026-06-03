@@ -1,4 +1,4 @@
--- AutoFarm Boss Script (v6 - Clean)
+-- AutoFarm Boss Script (v7 - Fixed)
 -- LocalScript in StarterPlayerScripts
 
 local Players = game:GetService("Players")
@@ -28,6 +28,7 @@ local BOSS_PRIORITY = {
 }
 
 local OFFSET = 2
+local NPC_SIDE_OFFSET = 7.3  -- ระยะห่างข้างๆ NPC (studs)
 local AFK_CF = CFrame.new(-2747.516602, 285.039551, -2140.749023) * CFrame.Angles(-3.141593, 1.218626, -3.141593)
 
 local enabled = false
@@ -37,6 +38,8 @@ for _, name in ipairs(BOSS_PRIORITY) do selectedBosses[name] = true end
 local currentTarget = nil
 local farmConnection = nil
 local questInProgress = false
+
+-- ==================== HELPER ====================
 
 local function getHRP()
 	local char = player.Character
@@ -95,101 +98,81 @@ local function snapToBoss(name)
 	end)
 end
 
+-- ==================== QUEST ====================
+
 local function acceptQuest(bossName, npcId, questId)
 	local npc = workspace.World.NPC.BossTask:FindFirstChild(npcId)
-	if not npc then
-		return false
-	end
+	if not npc then return false end
 
 	local done = false
 
+	-- Heartbeat: ยืนข้างๆ NPC ตลอดเวลา ไม่เข้าไปใน NPC
 	local conn = RunService.Heartbeat:Connect(function()
 		if done then return end
-
 		if isQuestReady(questId) then
 			done = true
 			return
 		end
-
 		local hrp = getHRP()
 		if hrp and npc.Parent then
-			local npcPos = npc:GetPivot().Position
-
-			hrp.CFrame = CFrame.new(
-				npcPos + Vector3.new(0, OFFSET, 0),
-				npcPos
-			)
+			local npcCF = npc:GetPivot()
+			local npcPos = npcCF.Position
+			-- ยืนด้านขวา NPC แล้วหันหน้าเข้าหา NPC
+			local standPos = npcPos + npcCF.RightVector * NPC_SIDE_OFFSET
+			hrp.CFrame = CFrame.new(standPos, npcPos)
 		end
 	end)
 
-while not done and npc.Parent do
+	-- Loop: fire ProximityPrompt ซ้ำๆ จนกว่าเควสจะ ready
+	while not done and npc.Parent do
+		if not isBossAlive(bossName) then
+			print("Boss died while getting quest")
+			done = true
+			break
+		end
+		local talk = npc:FindFirstChild("Talk")
+		if talk then
+			local prompt = talk:FindFirstChildOfClass("ProximityPrompt")
+			if prompt and prompt.Enabled then
+				pcall(function()
+					fireproximityprompt(prompt)
+				end)
+			end
+		end
+		task.wait(0.3)
+	end
 
-    if not isBossAlive(bossName) then
-        print("Boss died while getting quest")
-        done = true
-        break
-    end
+	conn:Disconnect()
 
-    local talk = npc:FindFirstChild("Talk")
-
-    if talk then
-        local prompt = talk:FindFirstChildOfClass("ProximityPrompt")
-
-        if prompt and prompt.Enabled then
-            pcall(function()
-                fireproximityprompt(prompt)
-            end)
-        end
-    end
-
-    task.wait(0.3)
+	if not isBossAlive(bossName) then return false end
+	return isQuestReady(questId)
 end
 
-conn:Disconnect()
-
-if not isBossAlive(bossName) then
-    return false
-end
-
-return isQuestReady(questId)
-end
+-- ต้อง declare updateStatus ก่อนเพราะ handleQuestBoss ใช้
+local updateStatus
 
 local function handleQuestBoss(bossName)
-    if questInProgress then
-        return
-    end
+	if questInProgress then return end
+	local data = getQuestData(bossName)
+	if not data then return end
+	if isQuestReady(data.questId) then return end
 
-    local data = getQuestData(bossName)
-    if not data then
-        return
-    end
+	questInProgress = true
 
-    if isQuestReady(data.questId) then
-        return
-    end
-
-    questInProgress = true
-
-    task.spawn(function()
-
-        local success = acceptQuest(
-            bossName,
-            data.npcId,
-            data.questId
-        )
-
-        if success then
-    print("Ready to kill:", bossName)
-else
-    currentTarget = getBestAvailableBoss()
-    updateStatus()
-end
-
-questInProgress = false
-    end)
+	task.spawn(function()
+		local success = acceptQuest(bossName, data.npcId, data.questId)
+		if success then
+			print("Quest ready, kill:", bossName)
+		else
+			currentTarget = getBestAvailableBoss()
+			if updateStatus then updateStatus() end
+		end
+		questInProgress = false
+	end)
 end
 
 -- ==================== GUI ====================
+
 local gui = Instance.new("ScreenGui")
 gui.Name = "AutoFarmGUI"
 gui.ResetOnSpawn = false
@@ -322,7 +305,8 @@ Instance.new("UICorner", statusBox).CornerRadius = UDim.new(0, 6)
 local s1 = makeText(statusBox, "● รอเริ่ม...", 8, 4, WIN_W-40, 14, 11, Color3.fromRGB(159, 225, 203), false)
 local s2 = makeText(statusBox, "", 8, 20, WIN_W-40, 14, 11, Color3.fromRGB(120, 120, 140), false)
 
-local function updateStatus()
+-- define updateStatus หลัง s1/s2 สร้างแล้ว
+updateStatus = function()
 	if not enabled then s1.Text = "■ หยุดทำงาน" s2.Text = "" return end
 	if currentTarget then
 		local qd = getQuestData(currentTarget)
